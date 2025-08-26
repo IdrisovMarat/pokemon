@@ -8,9 +8,18 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/IdrisovMarat/pokemon/internal/pokecache"
 )
 
-const baseUrl = "https://pokeapi.co/api/v2/location-area/"
+var baseUrl = "https://pokeapi.co/api/v2/location-area/"
+
+var cache *pokecache.Cache
+
+func init() {
+	// Инициализируем кэш с интервалом 1 минута
+	cache = pokecache.NewCache(45 * time.Second) // Изменилось: cache.NewCache
+}
 
 type locationJson struct {
 	Count    int       `json:"count"`
@@ -43,8 +52,32 @@ var pageConfig = config{
 	limit:    20,
 }
 
+// Вспомогательная функция для обработки данных из кэша
+func processCachedData(cachedData []byte, cfg *config) error {
+	var location locationJson
+	err := json.Unmarshal(cachedData, &location)
+	if err != nil {
+		return err
+	}
+
+	// Обновляем конфигурацию
+	cfg.next = location.Next
+	cfg.previous = location.Previous
+
+	// Выводим результаты
+	for _, k := range location.Results {
+		fmt.Println(k.Name)
+	}
+
+	// Увеличиваем offset для следующего вызова
+	cfg.offset += cfg.limit
+
+	return nil
+}
+
 func commandExit(cfg *config) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
+	cache.Stop()
 	os.Exit(0)
 	if os.ErrClosed != nil {
 		return os.ErrClosed
@@ -55,6 +88,12 @@ func commandExit(cfg *config) error {
 func commandMap(cfg *config) error {
 	// Формируем URL с текущим offset и limit
 	url := fmt.Sprintf("%s?offset=%d&limit=%d", baseUrl, cfg.offset, cfg.limit)
+
+	// Проверяем кэш
+	if cachedData, found := cache.Get(url); found {
+		fmt.Println("...USING CACHE DATA...")
+		return processCachedData(cachedData, cfg)
+	}
 
 	client := http.Client{
 		Timeout: 10 * time.Second,
@@ -82,6 +121,16 @@ func commandMap(cfg *config) error {
 	if err != nil {
 		return err
 	}
+
+	responseData, err := json.Marshal(location)
+	if err != nil {
+		return err
+	}
+
+	// Сохраняем в кэш
+	cache.Add(url, responseData)
+	fmt.Println("...DATA CACHED...")
+
 	// Обновляем конфигурацию
 	cfg.next = location.Next
 	cfg.previous = location.Previous
@@ -111,6 +160,12 @@ func commandMapb(cfg *config) error {
 
 	// Формируем URL
 	url := fmt.Sprintf("%s?offset=%d&limit=%d", baseUrl, cfg.offset, cfg.limit)
+
+	// Проверяем кэш
+	if cachedData, found := cache.Get(url); found {
+		fmt.Println("...USING CACHE DATA...")
+		return processCachedData(cachedData, cfg)
+	}
 
 	client := http.Client{
 		Timeout: 10 * time.Second,
@@ -193,6 +248,8 @@ func main() {
 
 	scanner := bufio.NewScanner(os.Stdin)
 
+	defer cache.Stop()
+
 	for {
 		fmt.Print("Pokedex > ")
 
@@ -217,4 +274,3 @@ func main() {
 	}
 
 }
-
