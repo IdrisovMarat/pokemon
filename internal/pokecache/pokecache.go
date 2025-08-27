@@ -18,6 +18,35 @@ type Cache struct {
 	stop     chan struct{}
 }
 
+type Pokemonmain struct {
+	Name      string
+	CreatedAt time.Time
+}
+
+type Pokedex struct {
+	mu   *sync.Mutex
+	data map[string]Pokemonmain
+}
+
+func (p *Pokedex) Add(pokemon string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.data[pokemon] = Pokemonmain{
+		Name:      pokemon,
+		CreatedAt: time.Now(),
+	}
+	// fmt.Println("ВСЕГО ПОКЕМОНОВ В POKEDEX", len(p.data))
+}
+
+func NewPokedex() *Pokedex {
+
+	pokedex := &Pokedex{
+		mu:   &sync.Mutex{},
+		data: make(map[string]Pokemonmain),
+	}
+	return pokedex
+}
+
 func NewCache(interval time.Duration) *Cache {
 
 	cache := &Cache{
